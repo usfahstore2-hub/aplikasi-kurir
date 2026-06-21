@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kurir Katering Sehat & Diet Presisi</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel Standalone -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" />
+    
+    <style>
+        /* Loading Animation */
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #4f46e5;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        /* Fade In Animation */
+        .fade-in {
+            animation: fadeIn 0.3s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Modal Overlay */
+        .modal-overlay {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #888; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* Toast Animation */
+        .toast-slide {
+            animation: slideInRight 0.3s ease-out;
+        }
+        @keyframes slideInRight {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        // ================================================================
+        // 1. IMPORTS & SETUP
+        // ================================================================
+        const { useState, useEffect, useRef, useCallback, createContext, useContext } = React;
+
+        // ================================================================
+        // 2. UTILITY FUNCTIONS
+        // ================================================================
+        
+        // Session Detection
+        const getActiveSession = () => {
+            const now = new Date();
+            const hours = now.getHours();
+            
+            if (hours >= 9 && hours < 12) {
+                return { session: 'LUNCH', startTime: '09:00', endTime: '12:00', isActive: true };
+            }
+            if (hours >= 15 && hours < 18) {
+                return { session: 'DINNER', startTime: '15:00', endTime: '18:00', isActive: true };
+            }
+            return { session: 'INACTIVE', startTime: '--:--', endTime: '--:--', isActive: false };
+        };
+
+        const formatSessionTime = (session) => {
+            if (!session.isActive) return 'Tidak Ada Sesi Aktif';
+            return `${session.session} (${session.startTime} - ${session.endTime} WIB)`;
+        };
+
+        // Mock Data
+        const getMockDeliveries = () => [
+            {
+                orderId: 'DEL-001',
+                customerName: 'Budi Santoso',
+                customerPhone: '081234567890',
+                locationCoord: { lat: -6.2088, lng: 106.8456 },
+                addressNotes: 'Taruh meja teras, pintu samping',
+                status: 'PICKUP',
+                session: 'LUNCH',
+                createdAt: new Date().toISOString(),
+                items: ['Nasi Ayam', 'Sup Sayur'],
+                specialInstructions: 'Jangan pakai bawang'
+            },
+            {
+                orderId: 'DEL-002',
+                customerName: 'Siti Rahayu',
+                customerPhone: '087654321098',
+                locationCoord: { lat: -6.1751, lng: 106.8650 },
+                addressNotes: 'Parkir di depan garasi',
+                status: 'ON_DELIVERY',
+                session: 'LUNCH',
+                createdAt: new Date().toISOString(),
+                items: ['Salad', 'Smoothie']
+            },
+            {
+                orderId: 'DEL-003',
+                customerName: 'Ahmad Hidayat',
+                customerPhone: '085678901234',
+                locationCoord: { lat: -6.2297, lng: 106.8464 },
+                addressNotes: 'Titip ke security',
+                status: 'DONE',
+                session: 'DINNER',
+                createdAt: new Date().toISOString()
+            },
+            {
+                orderId: 'DEL-004',
+                customerName: 'Dewi Lestari',
+                customerPhone: '081298765432',
+                locationCoord: { lat: -6.1956, lng: 106.8450 },
+                addressNotes: 'Rumah warna hijau, belakang pom bensin',
+                status: 'PICKUP',
+                session: 'LUNCH',
+                createdAt: new Date().toISOString(),
+                items: ['Nasi Goreng', 'Es Teh']
+            }
+        ];
+
+        // Toast System
+        let toastListener = null;
+        const showToast = (message, type = 'success') => {
+            if (toastListener) toastListener(message, type);
+        };
+
+        // ================================================================
+        // 3. LOCATION SERVICE
+        // ================================================================
+        const locationService = {
+            getCurrentPosition: () => new Promise((resolve) => {
+                if (navigator.geolocation) {
+                    navigator.geolocation.getCurrentPosition(
+                        (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                        () => resolve({ lat: -6.2088, lng: 106.8456 }),
+                        { enableHighAccuracy: true, timeout: 10000 }
+                    );
+                } else {
+                    resolve({ lat: -6.2088, lng: 106.8456 });
+                }
+            }),
+            launchNavigation: (lat, lng) => {
+                window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`, '_blank');
+                showToast('Membuka navigasi...', 'info');
+            }
+        };
+
+        // ================================================================
+        // 4. AUTH CONTEXT
+        // ================================================================
+        const AuthContext = createContext(null);
+
+        const AuthProvider = ({ children }) => {
+            const [user, setUser] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                const stored = localStorage.getItem('user');
+                if (stored) {
+                    try { setUser(JSON.parse(stored)); } 
+                    catch (e) { localStorage.removeItem('user'); }
+                }
+                setLoading(false);
+            }, []);
+
+            const login = async (email, password) => {
+                setLoading(true);
+                await new Promise(r => setTimeout(r, 1000));
+                const userData = {
+                    id: '1',
+                    name: 'Kurir Katering',
+                    email,
+                    role: 'COURIER',
+                    token: 'mock-jwt-token'
+                };
+                localStorage.setItem('user', JSON.stringify(userData));
+                setUser(userData);
+                showToast(`Selamat datang, ${userData.name}!`);
+                setLoading(false);
+                return userData;
+            };
+
+            const logout = () => {
+                localStorage.removeItem('user');
+                setUser(null);
+                showToast('Anda telah logout');
+            };
+
+            return (
+                <AuthContext.Provider value={{ user, login, logout, loading }}>
+                    {children}
+                </AuthContext.Provider>
+            );
+        };
+
+        const useAuth = () => useContext(AuthContext);
+
+        // ================================================================
+        // 5. SESSION HOOK
+        // ================================================================
+        const useSession = () => {
+            const [session, setSession] = useState(getActiveSession());
+            useEffect(() => {
+                const interval = setInterval(() => setSession(getActiveSession()), 30000);
+                return () => clearInterval(interval);
+            }, []);
+            return { session, formattedTime: formatSessionTime(session) };
+        };
+
+        // ================================================================
+        // 6. TOAST COMPONENT
+        // ================================================================
+        const ToastContainer = () => {
+            const [toasts, setToasts] = useState([]);
+
+            useEffect(() => {
+                toastListener = (message, type = 'success') => {
+                    const id = Date.now();
+                    setToasts(prev => [...prev, { id, message, type }]);
+                    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+                };
+                return () => { toastListener = null; };
+            }, []);
+
+            const getColor = (type) => {
+                const colors = { error: 'bg-red-500', success: 'bg-green-500', info: 'bg-blue-500' };
+                return colors[type] || 'bg-gray-700';
+            };
+
+            return (
+                <div className="fixed top-4 right-4 z-50 space-y-2">
+                    {toasts.map(t => (
+                        <div key={t.id} className={`${getColor(t.type)} text-white px-4 py-3 rounded-lg shadow-lg max-w-sm toast-slide`}>
+                            {t.message}
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        // ================================================================
+        // 7. PROTECTED ROUTE
+        // ================================================================
+        const ProtectedRoute = ({ children }) => {
+            const { user, loading } = useAuth();
+            if (loading) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+                        <div className="loading-spinner"></div>
+                    </div>
+                );
+            }
+            return user ? children : <Login />;
+        };
+
+        // ================================================================
+        // 8. LOGIN PAGE
+        // ================================================================
+        const Login = () => {
+            const [email, setEmail] = useState('');
+            const [password, setPassword] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const { login } = useAuth();
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setIsLoading(true);
+                try {
+                    await login(email, password);
+                    setIsLoggedIn(true);
+                } catch (e) { /* handled */ }
+                setIsLoading(false);
+            };
+
+            if (isLoggedIn) return <Dashboard />;
+
+            return (
+                <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-indigo-50 to-blue-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
+                        <div className="text-center mb-8">
+                            <div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-full mb-4">
+                                <i className="fas fa-truck text-indigo-600 text-2xl"></i>
+                            </div>
+                            <h1 className="text-2xl font-bold text-gray-900">Kurir Katering</h1>
+                            <p className="text-gray-600 mt-1">Masuk ke dashboard kurir</p>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="space-y-5">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                                <div className="relative">
+                                    <i className="fas fa-user absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                                    <input
+                                        type="email"
+                                        value={email}
+                                        onChange={(e) => setEmail(e.target.value)}
+                                        placeholder="kurir@katering.com"
+                                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                <div className="relative">
+                                    <i className="fas fa-lock absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+                                    <input
+                                        type="password"
+                                        value={password}
+                                        onChange={(e) => setPassword(e.target.value)}
+                                        placeholder="********"
+                                        className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={isLoading}
+                                className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium disabled:opacity-50"
+                            >
+                                {isLoading ? 'Loading...' : 'Masuk'}
+                            </button>
+                        </form>
+
+                        <div className="mt-6 text-center text-sm text-gray-500">
+                            <p>Demo: kurir@katering.com / password123</p>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // ================================================================
+        // 9. PROOF OF DELIVERY
+        // ================================================================
+        const ProofOfDelivery = ({ orderId, location, onClose, onSuccess }) => {
+            const [photo, setPhoto] = useState(null);
+            const [notes, setNotes] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const fileInputRef = useRef(null);
+
+            const handlePhotoCapture = (e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onloadend = () => setPhoto(reader.result);
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleSubmit = async () => {
+                if (!photo) {
+                    showToast('Silakan ambil foto bukti pengiriman', 'error');
+                    return;
+                }
+                setIsLoading(true);
+                await new Promise(r => setTimeout(r, 1500));
+                showToast('Bukti pengiriman berhasil diupload!');
+                setIsLoading(false);
+                onSuccess();
+            };
+
+            return (
+                <div className="fixed inset-0 modal-overlay flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between p-4 border-b">
+                            <h3 className="text-lg font-semibold text-gray-900">Bukti Pengiriman</h3>
+                            <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+                                <i className="fas fa-times text-xl"></i>
+                            </button>
+                        </div>
+
+                        <div className="p-4 space-y-4">
+                            <div className="text-sm text-gray-600">
+                                <p>ID Pesanan: <span className="font-medium">{orderId}</span></p>
+                                <p className="mt-1">Ambil foto bukti pengiriman di lokasi pelanggan.</p>
+                            </div>
+
+                            <div className="relative">
+                                {photo ? (
+                                    <div className="relative">
+                                        <img src={photo} alt="Bukti" className="w-full h-64 object-cover rounded-lg" />
+                                        <button onClick={() => setPhoto(null)} className="absolute top-2 right-2 bg-red-500 text-white p-2 rounded-full hover:bg-red-600">
+                                            <i className="fas fa-times"></i>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div onClick={() => fileInputRef.current?.click()} className="border-2 border-dashed border-gray-300 rounded-lg h-64 flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 transition-colors">
+                                        <i className="fas fa-camera text-gray-400 text-4xl mb-3"></i>
+                                        <p className="text-gray-500 text-sm">Klik untuk ambil foto</p>
+                                        <p className="text-gray-400 text-xs mt-1">atau upload dari galeri</p>
+                                    </div>
+                                )}
+                                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoCapture} className="hidden" />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Catatan (Opsional)</label>
+                                <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Contoh: Paket diletakkan di teras depan" className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none" rows={2} />
+                            </div>
+
+                            <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800">
+                                <p className="font-medium">📍 Lokasi Pengiriman</p>
+                                <p className="text-xs mt-1">Lat: {location.lat.toFixed(6)}, Lng: {location.lng.toFixed(6)}</p>
+                         
